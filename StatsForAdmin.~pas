@@ -1,0 +1,442 @@
+{ Модуль статистики операций }
+unit StatsForAdmin;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls,
+  Forms, Dialogs, Grids, StdCtrls, Menus, ComCtrls, ToolWin;
+
+type
+  TStatsForm = class(TForm)
+    StatsGrid: TStringGrid;
+    btnDeleteRec: TButton;
+    btnEditRec: TButton;
+    btnDeleteUser: TButton;
+    btnSaveInfo: TButton;
+    edtDelUser: TEdit;
+    cbbSortBy: TComboBoxEx;
+    procedure FormShow(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure btnEditRecClick(Sender: TObject);
+    procedure rbUserLoginMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure btnDeleteRecClick(Sender: TObject);
+    procedure btnSaveInfoClick(Sender: TObject);
+    procedure btnDeleteUserClick(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure cbbSortBySelect(Sender: TObject);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+  end;
+  TUserStats = record
+            Login: string[16];
+            Action: string[12];
+            OldName, NewName: string[20];
+            Time: TDateTime;
+            OldSize, NewSize: cardinal;
+            ProcVal: real;
+           end;
+  TList = ^TRoll;            //Тип-указатель на запись
+  TRoll = record             //Тип-запись
+            Rec: TUserStats; //Инфо
+            Next: TList;     //Адрес следующего звена списка
+          end;
+
+procedure WriteInfo;
+procedure SaveField;
+
+var
+  StatsForm: TStatsForm;    //Форма статистики
+  NextAct: TUserStats;      //Статистика
+
+implementation
+
+uses
+  HuffPackage,
+  AdmEditForm;
+
+{$R *.dfm}
+
+const
+
+  StatsDir='D:\Huffman Package\UserStats';
+
+var
+  StatsFile: file of TUserStats; //Файл статистики
+  FirstEl,LastEl: TList;         //Первый/последний элемент списка
+  ColPos,RowPos: integer;        //Позиции в таблице
+  EdtPos: TList;                 //Строка редактирования
+
+{ Запись статистики в файл }
+procedure WriteInfo;
+
+begin
+
+  Assign(StatsFile,StatsDir);
+
+  if FileExists(StatsDir) then
+  begin
+
+    Reset(StatsFile);
+    Seek(StatsFile,FileSize(StatsFile));
+
+  end
+  else Rewrite(StatsFile);
+
+  Write(StatsFile,NextAct);
+  Close(StatsFile);
+
+end;
+
+{ Считывание статистики из файла в однонаправленный список}
+procedure ReadUserInfo;
+
+begin
+
+  Assign(StatsFile,StatsDir);
+  if FileExists(StatsDir) then Reset(StatsFile)
+  else Rewrite(StatsFile);
+  New(FirstEl);
+  LastEl:=FirstEl;
+
+  {Добавление звеньев с записями в список}
+  while not(Eof(StatsFile)) do
+  begin
+
+    New(LastEl.Next);
+    LastEl:=LastEl.Next;
+    Read(StatsFile,LastEl.Rec);
+
+  end;
+
+  Close(StatsFile);
+
+end;
+
+{ Отображение статистики }
+procedure ShowStatsInfo;
+
+var
+  Pointer: TList; //Элемент списка
+  i: word;        //Счётчик
+
+begin
+
+  Pointer:=FirstEl.Next;
+
+  StatsForm.StatsGrid.RowCount:=2;
+
+  { Проход по списку информации }
+  while Pointer<>LastEl.Next do
+  begin
+
+    with StatsForm.StatsGrid do
+      with Pointer.Rec do
+      begin
+
+        i:=RowCount-1;
+        Cells[0,i]:=Login;
+        Cells[1,i]:=Action;
+        Cells[2,i]:=OldName;
+        Cells[3,i]:=NewName;
+        Cells[4,i]:=TimeToStr(Time);
+        Cells[5,i]:=DateToStr(Time);
+        Cells[6,i]:=FloatToStr(OldSize/1024);
+        Cells[7,i]:=FloatToStr(NewSize/1024);
+        Cells[8,i]:=FloatToStr(ProcVal);
+        Cells[9,i]:=IntToStr(i);
+        RowCount:=RowCount+1;
+
+      end;
+
+    Pointer:=Pointer.Next;
+
+  end;
+
+  StatsForm.StatsGrid.RowCount:=StatsForm.StatsGrid.RowCount-1;
+
+end;
+
+{ Сохранение информации списка в файл }
+procedure SaveInfo;
+
+var
+  Pointer:TList;  //Элемент списка
+
+begin
+
+  Assign(StatsFile,StatsDir);
+  Rewrite(StatsFile);
+  Pointer:=FirstEl.Next;
+
+  while Pointer<>LastEl.Next do
+  begin
+
+    Write(StatsFile,Pointer.Rec);
+    Pointer:=Pointer.Next;
+
+  end;
+
+  Close(StatsFile);
+
+end;
+
+{ Действия при отображении формы статистики }
+procedure TStatsForm.FormShow(Sender: TObject);
+begin
+
+  ReadUserInfo;
+  ShowStatsInfo;
+
+end;
+
+{ Действия при закрытии формы статистики }
+procedure TStatsForm.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+
+  MainForm.Show;
+
+end;
+
+{ Действия при редактировании записи }
+procedure TStatsForm.btnEditRecClick(Sender: TObject);
+
+var
+  i,RecNum: word;    //Счётчики
+
+begin
+
+  if (FirstEl<>nil) and (StatsGrid.Row<>0) then
+  begin
+
+    EdtPos:=FirstEl;
+    RecNum:=StrToInt(StatsGrid.Cells[9,StatsGrid.Row]);
+    for i:=1 to RecNum do EdtPos:=EdtPos.Next;
+
+    { Получение текущей информации в поля формы }
+    with  AdmEditForm.EditForm do
+      with EdtPos.Rec do
+      begin
+
+        edtChLogin.Text:=Login;
+        edtChAction.Text:=Action;
+        edtChOldName.Text:=OldName;
+        edtChNewName.Text:=NewName;
+        edtChProcVal.text:=FloatToStr(ProcVal);
+        StatsForm.Enabled:=False;
+        EditForm.Show;
+
+      end;
+
+  end;
+
+end;
+
+{ Сохранение записи после редактирования }
+procedure SaveField;
+
+begin
+
+  with  AdmEditForm.EditForm do
+    with EdtPos.Rec do
+    begin
+
+      Login:=edtChLogin.Text;
+      Action:=edtChAction.Text;
+      OldName:=edtChOldName.Text;
+      NewName:=edtChOldName.Text;
+      ProcVal:=StrToFloat(edtChProcVal.Text);
+
+    end;
+
+  StatsForm.StatsGrid.Enabled:=True;
+  ShowStatsInfo;
+
+end;
+
+{ Удаление записи }
+procedure TStatsForm.rbUserLoginMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+
+begin
+
+  { Получение координат }
+  with StatsGrid do
+  begin
+
+    MouseToCell(X,Y,ColPos,RowPos);
+    Col:=ColPos;
+    Row:=RowPos;
+
+  end
+
+end;
+
+{ Действия при удалении записи }
+procedure TStatsForm.btnDeleteRecClick(Sender: TObject);
+
+var
+  Pos,Pointer: TList;   //Элемент списка
+  i,RecNum: word;       //Счётчики
+
+begin
+
+  if (FirstEl<>nil) and (StatsGrid.Row<>0) then
+  begin
+
+    RecNum:=StrToInt(StatsGrid.Cells[9,StatsGrid.Row]);
+    StatsGrid.Rows[StatsGrid.Row].Clear;
+    Pointer:=FirstEl;
+    for i:=1 to RecNum-1 do Pointer:=Pointer.Next;
+    Pos:=Pointer.Next;
+    Pointer.Next:=Pos.Next;
+    Dispose(Pos);
+    ShowStatsInfo;
+
+  end
+  else ShowMessage('Отсутствуют или не выбрана информация для удаления');
+
+end;
+
+{ Действия при сохранении статистики }
+procedure TStatsForm.btnSaveInfoClick(Sender: TObject);
+
+begin
+
+  if (FirstEl<>nil) then SaveInfo
+  else ShowMessage('Информация для сохранения отсутствует');
+
+end;
+
+{ Действия при удалении пользователя }
+procedure TStatsForm.btnDeleteUserClick(Sender: TObject);
+
+var
+  FileName: string;
+
+begin
+
+  if edtDelUser.Text<>'' then
+  begin
+
+    FileName:='D:\Huffman Package\Пользователи\'+edtDelUser.Text;
+    if DeleteFile(FileName)
+    then ShowMessage('Пользователь '+edtDelUser.Text+' был удалён')
+    else ShowMessage('Ошибка. Файл не был удален');
+
+  end
+  else ShowMessage('Ввелидте логин пользователя');
+
+end;
+
+{ Действия при создании формы статистики }
+procedure TStatsForm.FormCreate(Sender: TObject);
+begin
+
+  {$I GridCreate.txt}
+
+end;
+
+{ Сравнение полей при сортировке в порядке возрастания }
+function CompareUp(Col: byte; Cur,Next: word):boolean;
+
+begin
+
+
+  Result:=(StatsForm.StatsGrid.Cells[Col,Cur]>StatsForm.StatsGrid.Cells[Col,Next]);
+
+end;
+
+{ Сравнение полей при сортировке в порядке убывания }
+function CompareDown(Col: byte; Cur,Next: word):boolean;
+
+begin
+
+  Result:=(StatsForm.StatsGrid.Cells[Col,Cur]<StatsForm.StatsGrid.Cells[Col,Next])
+
+end;
+
+{ Сортировка записей }
+procedure TStatsForm.cbbSortBySelect(Sender: TObject);
+
+type
+  TComptAct = function(Col: byte; Cur,Next: word):boolean;
+
+var
+  i,j,k,n: word;
+  Temp: string;
+  Col: byte;
+  Condition: TComptAct;
+
+begin
+
+  Col:=0;
+  Condition:=nil;
+
+  { Выбор критерия сортировки }
+  case cbbSortBy.ItemIndex of
+    0:
+      begin
+        Col:=5;
+        Condition:=CompareUp;
+      end;
+    1:
+      begin
+        Col:=5;
+        Condition:=CompareDown;
+      end;
+    2:
+      begin
+        Col:=3;
+        Condition:=CompareUp;
+      end;
+    3:
+      begin
+        Col:=3;
+        Condition:=CompareDown;
+      end;
+    4:
+      begin
+        Col:=8;
+        Condition:=CompareDown;
+      end;
+    5:
+      begin
+        Col:=8;
+        Condition:=CompareUp;
+      end;
+    6:
+      begin
+        Col:=0;
+        Condition:=CompareDown;
+      end;
+    7:
+      begin
+        Col:=0;
+        Condition:=CompareUp;
+      end;
+
+  end;
+
+  { Сортировка записей полей StatsGrid }
+  n:=StatsGrid.RowCount;
+  for i:=1 to n-2 do
+    for j:=i+1 to n-1 do
+      if Condition(Col,i,j) then
+        for k:=0 to StatsGrid.ColCount do
+        begin
+
+          Temp:=StatsGrid.Cells[k,i];
+          StatsGrid.Cells[k,i]:=StatsGrid.Cells[k,j];
+          StatsGrid.Cells[k,j]:=Temp;
+
+        end
+
+end;
+
+
+
+end.

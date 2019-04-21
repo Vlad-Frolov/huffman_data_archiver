@@ -1,0 +1,251 @@
+{ Модуль вспомогательных элементов программы }
+unit ArchivatorElements;
+
+interface
+
+uses
+  ChangedAction;   //Модуль получения таблицы встречаемости
+
+Type
+
+  {Процедурный тип - выбор способа получения байтов (при сжатии/распаковке)}
+  TSymbolGet = procedure(var source: file; var FrTable: TFreqTable);
+  TAdr = ^Tlief;                      //Тип-указатель на запись
+  TBin = 0..1;                        //Тип позиции в дереве (0 - лево, 1 право)
+  TLief = record                      //Тип-запись- лист дерева
+            Pos: TBin;                //Позиция (слева/справа);
+            Symbol: Byte;             //Номер байта
+            Code: string;             //Код двоичный
+            Freq: Word;               //Встречаемость
+            Left,Right: TAdr;         //Левый/правый сын
+          end;
+
+  { Тип-массив указателей на запись }
+  TTrees = array of TAdr;
+  TAlphabet = array[Byte] of TAdr;
+
+function QuickSortArr(var MyForest: TTrees):byte;
+procedure GetTable(var FrTable: TFreqTable; var SourSt: string;
+                   GetProc: pointer);
+procedure CountInfo(var FrTable: TFreqTable; var MyForest: TTrees;
+                    var ByteAlph: TAlphabet);
+procedure CreateTree(var MyForest: TTrees);
+procedure ViewTree(var Tree:TAdr;code:string);
+
+implementation
+
+uses
+  StatsForAdmin;  //Модуль статистики операций
+
+{ Получение таблицы встречаемости файла архивируемого/разархивируемого }
+procedure GetTable;
+
+var
+  Action: TSymbolGet;
+  F: file;
+
+begin
+
+  Assign(F,SourSt);
+  Reset(F,1);
+  Action:=GetProc;
+  Action(F,FrTable);
+  Close(F);
+
+end;
+
+{ Создание леса листьев листов }
+procedure CountInfo;
+
+var
+  i:byte;       //Счётчик цикла
+
+begin
+
+  SetLength(MyForest,256);
+
+  {Заполнение листьев информацией по встречаемости байтов}
+  for i:=0 to 255 do
+  begin
+
+    New(MyForest[i]);   //Создание элемента с записью
+
+    with MyForest[i]^ do
+    begin
+
+      Freq:=FrTable[i]; //Встречаемость
+      Left:=nil;        //Указатель на левого сына
+      Right:=nil;       //Указатель на правого сына
+      Symbol:=i;        //Номер байта
+
+    end;
+
+    ByteAlph[i]:=MyForest[i];
+
+  end;
+
+end;
+
+{ Быстрая сортировка указателей на записи }
+function QuickSortArr;
+
+var
+  i,j,s: Integer;     //Счётчики
+  l,r,x:integer;      //Левая/правая границы / Опорный элементт
+  temp:TAdr;          // Временная переменная
+  st:array[1..100,1..2] of integer; //Запоминание области сортировки
+
+begin
+
+  { Инициализация параметров }
+  s:=1;
+  st[1,1]:=0;
+  st[1,2]:=Length(MyForest)-1;
+
+  repeat
+
+    { Определение границ }
+    l:=st[s,1];
+    r:=st[s,2];
+    s:=s-1;
+
+    repeat
+
+      i:=l;
+      j:=r;
+      x:=MyForest[(l+r) div 2]^.Freq;
+
+      repeat
+
+        { Сравнение и обмен элементов до опорного }
+        while MyForest[i]^.Freq>x do i:=i+1;
+        while x>MyForest[j]^.Freq do j:=j-1;
+        if i<=j then
+        begin
+          temp:=MyForest[i];
+          MyForest[i]:=MyForest[j];
+          MyForest[j]:=temp;
+          inc(i);
+          Dec(j);
+        end;
+
+      until  i>j;
+
+      { Запоминание области сортировки }
+      if i<r then
+      begin
+        Inc(s);
+        st[s,1]:=i;
+        st[s,2]:=r;
+      end;
+      r:=j;
+
+    until  l>=r;
+
+  until s=0;
+
+  { Уборка листов, чья встречаеомть равно нулю }
+  j:=Length(MyForest)-1;
+  while MyForest[j]^.Freq=0 do
+  begin
+
+    Dispose(MyForest[j]);
+    dec(j);
+
+  end;
+  SetLength(MyForest,j+1);
+  Result:=j; //Длина таблицы встречаемости
+
+end;
+
+{ Создание нового родительского узла }
+function CreateLief(var lief1, lief2: TAdr):TAdr;
+
+var
+  CurTree: TAdr;
+
+begin
+
+  lief2.Pos:=0;
+  lief2.Pos:=1;
+  New(CurTree);
+  CurTree.Freq:=lief1.Freq+lief2.Freq;
+  CurTree.Left:=lief1;
+  CurTree.Right:=lief2;
+  Result:=CurTree;
+
+end;
+
+{ Вставка ссылки на лист на нужнаю позицию }
+procedure InsertLief(var InLief: TAdr; var MyArr: TTrees; PrevPos:byte);
+
+var
+  TempLief: TAdr;
+  i:integer;
+  InsPos:integer;
+
+begin
+
+  InsPos:=PrevPos-1; //Позиция для сравнения вставляемого элемента
+  { Поиск позиции для вставки }
+  while (InsPos>=0) and (MyArr[PrevPos].Freq>MyArr[InsPos].Freq) do Dec(InsPos);
+  TempLief:=InLief;   //Сохранение вставляемого листа
+  for i:=PrevPos downto InsPos+1 do MyArr[i]:=MyArr[i-1]; //Смещение листов
+  MyArr[InsPos+1]:=TempLief; //Вставка листа
+
+end;
+
+{ Построение дерева Хаффмана }
+procedure CreateTree;
+
+var
+
+  i:byte;       //Счётчик
+  Lief: TAdr;   //Создаваемый лист-родитель
+
+begin
+
+  i:=Length(MyForest)-1;
+
+  while i>0 do
+  begin
+
+    Lief:=CreateLief(MyForest[i],MyForest[i-1]); //Создание листа
+    MyForest[i-1]:=Lief;
+    InsertLief(MyForest[i-1],MyForest,i-1); //Вставка листа на нужную позицию
+    Dec(i);
+    SetLength(MyForest,Length(MyForest)-1); //Корректировка размера массива
+
+  end;
+
+end;
+
+{ Рекурсивный обход дерева Хаффмана сверху вниз }
+procedure ViewTree;
+
+begin
+
+  { Просмотр левого поддерева }
+  If Tree.Left<>Nil then
+  begin
+
+    code:=code+'0';             //Переход к след. узлу в лево
+    Tree.Left.Code:=code;     //Присваение левому узлу кода
+    ViewTree(Tree^.Left,code);  //Рекурсивный просмотр левого поддерева
+
+  end;
+
+  { Просмотр правого поддерева }
+  If Tree^.Right<>Nil then
+  begin
+
+    setlength(code,length(code)-1);
+    code:=code+'1';             //Переход к след. узлу в право
+    Tree.Right.Code:=code;    //Присваение правому узлу кода
+    ViewTree(Tree.Right,code); //Рекурсивный просмотр правого поддерева
+
+  end;
+
+end;
+
+end.

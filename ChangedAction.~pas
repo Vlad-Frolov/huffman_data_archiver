@@ -1,0 +1,78 @@
+{ Модуль получения таблицы встречаемости }
+unit ChangedAction;
+
+interface
+
+const
+  BufSize = 524288;                    //Размер буфера
+
+type
+  TFreqTable = array[Byte] of Word;    //Тип-массив
+  TBuf = array[0..BufSize] of Byte;    //Тип-массив
+
+var
+  FreqArr: TFreqTable;    //Массив встречаемости байтов
+  Buffer,BufferOut: TBuf; //Буфер ввода и вывода
+  MaxLength: byte;        //Длина таблицы встречаемости
+  ResIn,ResOut: LongWord; //Результат записи в буфер/из буфера
+
+{ Процедура получения таблицы встречаемости при сжатии файла:
+проход по всему файлу и запись символов в таблицу встречаемости }
+procedure GetSymbolEnc(var source: file; var FrTable: TFreqTable);
+
+{ Процедура получения таблицы встречаемости про распаковки файла:
+проход по началу файлу, где хранится таблица встречаеомсти }
+procedure GetSymbolDec(var source: file; var FrTable: TFreqTable);
+
+implementation
+
+{ Процедура получения таблицы встречаемости про сжатии файла:
+проход по всему файлу и запись символов в таблицу встречаемости }
+procedure GetSymbolEnc;
+
+var
+  i: Cardinal;   //Счётчик цикла
+
+begin
+
+  { Проход по всему файлу }
+  while not(Eof(source)) do
+  begin
+
+    Blockread(source,Buffer,BufSize,ResIn);
+    { Проход по буферу }
+    for i:=0 to ResIn do Inc(FrTable[Buffer[i]]);
+
+  end;
+
+end;
+
+{ Процедура получения таблицы встречаемости при распаковки файла:
+проход по началу файлу, где хранится таблица встречаемости }
+procedure GetSymbolDec;
+
+var
+
+  i,EndPos,Symbol: byte;
+  Freq:Word;          //Встречаемость байта
+
+begin
+
+  seek(source,4);
+  BlockRead(source,EndPos,1);
+
+
+  {Проход по встречаеомстям байта}
+  for i:=0 to EndPos do
+  begin
+
+    BlockRead(source,c,1);
+    BlockRead(source,Freq,2);
+    FrTable[c]:=Freq;
+
+  end;
+
+
+end;
+
+end.

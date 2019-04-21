@@ -1,0 +1,89 @@
+{ Модуль контроля данных авторизации }
+unit AuthorController;
+
+interface
+
+Uses
+  StdCtrls,
+  Dialogs;
+
+{ Функция проверки всех полей на корректность }
+function CheckInfo(var Login, Pass: TEdit):boolean;
+
+{ Функция проверки длины и пустоты поля }
+function CheckFields(var InfoField: TEdit):Boolean;
+
+{ Функция проверки символов в поле }
+function IsBadSymbols(var InfoField: TEdit):Boolean;
+
+implementation
+
+{ Проверка всех полей на корректность }
+function CheckInfo;
+
+begin
+
+  Result:=CheckFields(Login) or CheckFields(Pass) or IsBadSymbols(Login) or IsBadSymbols(Pass);
+
+end;
+
+{ Функция проверки символов в поле }
+function IsBadSymbols;
+
+var
+  i:byte;
+  flag: boolean;
+
+begin
+
+  i:=1;
+  flag:=false;
+
+  { Поиск символов, не входящих в допустимые }
+  while not(flag) and (i<=Length(InfoField.Text)) do
+  begin
+
+    if not(InfoField.Text[i] in ['A'..'Z','a'..'z','0'..'9','_']) then
+    begin
+
+      ShowMessage('Недопустимый символ в поле '+InfoField.Hint);
+      flag:=true;
+
+    end;
+
+    inc(i);
+
+  end;
+
+  Result:=Flag;
+
+end;
+
+{ Функция проверки полей }
+function CheckFields;
+
+begin
+
+  Result:=False;
+
+  { Проверка на пустоту }
+  if InfoField.Text='' then
+  begin
+
+    ShowMessage('Поле '+InfoField.Hint+' пустое');
+    Result:=true;
+
+  end;
+
+  { Проверка длины поля }
+  if Length(InfoField.Text)>16 then
+  begin
+
+    ShowMessage('Длина поля '+InfoField.Hint+' превышает 16 символов');
+    Result:=true;
+
+  end;
+
+end;
+
+end.

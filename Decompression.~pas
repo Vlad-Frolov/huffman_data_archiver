@@ -1,0 +1,176 @@
+{ Модуль процесса распаковки файла }
+unit Decompression;
+
+interface
+
+uses
+  SysUtils,
+  ChangedAction,
+  ArchivatorElements;
+
+procedure Decomp(var Source,Dest: string; var Root: TAdr);
+
+implementation
+
+Uses
+  StatsForAdmin;   //Модуль статистики операций
+
+var
+  Flag:boolean;    //Флажок-признак
+
+{ Получение двоичной строки }
+function RetBin(val: byte):string;
+
+var
+  BinStr: string;
+  i,ost:byte;
+
+begin
+
+  i:=8;
+  BinStr:='00000000';
+  repeat
+
+    ost:=val mod 2;
+    BinStr[i]:=chr(ost+ord('0'));
+    val:=val div 2;
+    dec(i);
+
+  until val=0;
+
+  Result:=BinStr;
+
+end;
+
+{ Полуение распаковываемого байта }
+function GetChar(var MyTree: TAdr; var Mystr: string):byte;
+
+var
+  i:byte;         //Счётчик
+  CurTree: TAdr;  //Позиция в дереве
+
+begin
+
+  flag:=False;
+  CurTree:=MyTree;
+  i:=1;
+
+  { Проход по дереву }
+  while (CurTree^.Left<>nil) and (i<=length(MyStr)) do
+  begin
+    if Mystr[i]='0' then CurTree:=CurTree^.Left else CurTree:=CurTree^.Right;
+    Inc(i);
+  end;
+  if ((CurTree^.Left=nil) and (CurTree^.Right=nil)) and (i<=Length(Mystr)) then
+  begin
+
+    Delete(Mystr,1,i-1);
+    Result:=CurTree^.Symbol;
+    Flag:=true;
+
+  end
+  else Result:=0;
+
+end;
+
+{ Получение расширения сжатого файла }
+function GetExtension(var Source: file):string;
+
+var
+  i: byte;  //Счётчик
+  Symbol: byte;
+
+begin
+
+   { Считыванеие расширения запакованного файла }
+  for i:=1 to 4 do
+  begin
+
+    Blockread(Source,Symbol,1);
+    Result:=Result+chr(Symbol);
+
+  end;
+  if Result[4]=' ' then SetLength(Result,3);
+
+end;
+
+{ Распаковка файла }
+procedure Decomp;
+
+var
+  Symbol:byte;             //Распаковываемый байт
+  SourFile, DestFile:file; //Файл-инсточник/файл-приёмник
+  pos: word;               //Позиция в файле
+  Mystr: string;           //Двоичная строка
+  i,k: longword;           //Счётчики
+
+begin
+
+  { Настройка файлов }
+  pos:=0;
+  Assign(SourFile,Source);
+  Reset(SourFile,1);
+  NextAct.OldSize:=FileSize(SourFile);
+  Assign(DestFile,Dest+'.'+GetExtension(SourFile));
+  Rewrite(DestFile,1);
+
+  { Установка на нужную позицию в файле }
+  Blockread(SourFile,pos,1);
+  pos:=(pos+1)*3+5;
+  seek(SourFile,pos);
+
+  MyStr:='';
+  k:=0;
+
+  { Проход по всему файлу }
+  while not(eof(SourFile)) do
+  begin
+
+    BlockRead(SourFile,Buffer,BufSize,ResIn);
+    i:=0;
+
+    while i<ResIn do
+    begin
+
+      MyStr:=MyStr+RetBin(Buffer[i]);
+      inc(i);
+
+      repeat
+
+        Symbol:=GetChar(Root,Mystr);  //Получение запакованного байта
+
+        { Если байт был получен, то выполняется запись в буфер }
+        if Flag then
+        begin
+
+          if k=BufSize then
+          begin
+
+            BlockWrite(DestFile,BufferOut,k,ResIn);
+            k:=0;
+
+          end;
+
+          BufferOut[k]:=Symbol;
+          inc(k);
+
+        end
+
+      until (Mystr='') or not(Flag);
+
+    end;
+    i:=0;
+
+  end;
+
+  { Если бефуер не был заполнен полностью }
+  if k<>0 then BlockWrite(DestFile,BufferOut,k,ResOut);
+
+  NextAct.NewSize:=FileSize(DestFile);
+  Close(DestFile);
+  Close(SourFile);
+
+end;
+
+end.
+ 
