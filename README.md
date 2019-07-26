@@ -1,4 +1,4 @@
-# huffman_data_archiver
+# Huffman Data Archiver
 
 Functions performed by the software:
 - selection of the archived file;
